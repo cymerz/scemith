@@ -53,6 +53,8 @@ export default function Home() {
   const [rightTab, setRightTab] = useState<RightTab>("normalization");
   const [mobileTab, setMobileTab] = useState<MobileTab>("editor");
   const [showExampleModal, setShowExampleModal] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   // Increment fitKey to tell ERDDiagram to auto-fit after load/decompose/undo
   const fitKeyRef = useRef(0);
   const [fitKey, setFitKey] = useState(0);
@@ -103,6 +105,53 @@ export default function Home() {
     []
   );
 
+  const handleExport = useCallback(() => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(schema, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "schema.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [schema]);
+
+  const handleImport = useCallback(async (file?: File) => {
+    if (!file) return;
+    if (schema.tables.length > 0 && !window.confirm("Importing will replace the current schema. Continue?")) {
+      if (importInputRef.current) importInputRef.current.value = "";
+      return;
+    }
+    try {
+      const parsed: unknown = JSON.parse(await file.text());
+      if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as Schema).tables)) {
+        throw new Error("Invalid schema file. Expected a JSON object with a tables array.");
+      }
+      const next = parsed as Schema;
+      if (!next.tables.every((table) =>
+        table && typeof table.id === "string" && typeof table.name === "string" &&
+        Array.isArray(table.columns) && Array.isArray(table.dependencies) &&
+        table.position && typeof table.position.x === "number" && typeof table.position.y === "number" &&
+        table.columns.every((column) =>
+          column && typeof column.id === "string" && typeof column.name === "string" &&
+          typeof column.type === "string" && typeof column.primaryKey === "boolean" &&
+          typeof column.notNull === "boolean" && typeof column.unique === "boolean" &&
+          typeof column.autoIncrement === "boolean"
+        ) && table.dependencies.every((fd) =>
+          fd && typeof fd.id === "string" && Array.isArray(fd.determinant) &&
+          Array.isArray(fd.dependent) && typeof fd.raw === "string"
+        )
+      )) {
+        throw new Error("Invalid schema file. Table or column data is incomplete.");
+      }
+      setSchema(next);
+      setUndoSnapshot(null);
+      setImportError(null);
+      bumpFit();
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Could not import this file.");
+    }
+    if (importInputRef.current) importInputRef.current.value = "";
+  }, [bumpFit]);
+
   const handleLoadExample = useCallback((example: ReturnType<typeof getExamples>[number]) => {
     // Apply auto-layout so example tables are arranged in a tidy graph
     setSchema({ tables: autoLayout(example.schema.tables) });
@@ -148,6 +197,23 @@ export default function Home() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              aria-label="Import schema JSON"
+              onChange={(e) => void handleImport(e.target.files?.[0])}
+            />
+            <button
+              onClick={() => importInputRef.current?.click()}
+              className="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50"
+            >Import</button>
+            <button
+              onClick={handleExport}
+              disabled={schema.tables.length === 0}
+              className="px-2.5 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >Export</button>
             {errorCount > 0 ? (
               <span className="inline-flex items-center gap-1.5 text-xs bg-red-50 text-red-700 border border-red-100 px-2.5 py-1 rounded-full font-medium tabular-nums">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
@@ -160,6 +226,13 @@ export default function Home() {
             ) : null}
           </div>
         </header>
+
+        {importError && (
+          <div role="alert" className="flex-none px-4 py-2 text-xs text-red-700 bg-red-50 border-b border-red-100">
+            {importError}
+            <button onClick={() => setImportError(null)} className="ml-3 underline">Dismiss</button>
+          </div>
+        )}
 
         <div className="hidden md:flex flex-1 min-h-0 gap-3 p-3">
           <aside className="w-[340px] min-w-[280px] max-w-[480px] flex-none border border-slate-200/80 rounded-xl flex flex-col bg-white overflow-x-hidden overflow-y-auto shadow-sm">
