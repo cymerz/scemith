@@ -9,6 +9,7 @@ import ERDDiagram, { autoLayout } from "@/app/components/ERDDiagram";
 import NormalizationPanel from "@/app/components/NormalizationPanel";
 import SQLPanel from "@/app/components/SQLPanel";
 import ExampleModal from "@/app/components/ExampleModal";
+import AIDesignModal from "@/app/components/AIDesignModal";
 
 type RightTab = "normalization" | "sql";
 type MobileTab = "editor" | "diagram" | "normalization" | "sql";
@@ -53,6 +54,7 @@ export default function Home() {
   const [rightTab, setRightTab] = useState<RightTab>("normalization");
   const [mobileTab, setMobileTab] = useState<MobileTab>("editor");
   const [showExampleModal, setShowExampleModal] = useState(false);
+  const [showAIDesignModal, setShowAIDesignModal] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   // Increment fitKey to tell ERDDiagram to auto-fit after load/decompose/undo
@@ -179,6 +181,17 @@ export default function Home() {
           onClose={() => setShowExampleModal(false)}
         />
       )}
+      {showAIDesignModal && (
+        <AIDesignModal
+          onApply={(next) => {
+            setSchema({ tables: autoLayout(next.tables) });
+            setUndoSnapshot(null);
+            setShowAIDesignModal(false);
+            bumpFit();
+          }}
+          onClose={() => setShowAIDesignModal(false)}
+        />
+      )}
 
       <div className="h-dvh overflow-hidden flex flex-col bg-[#f4f6fa] text-slate-900">
         <header className="flex-none flex items-center justify-between px-5 h-14 bg-white border-b border-slate-200/80 z-10">
@@ -214,6 +227,10 @@ export default function Home() {
               disabled={schema.tables.length === 0}
               className="px-2.5 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
             >Export</button>
+            <button
+              onClick={() => setShowAIDesignModal(true)}
+              className="inline-flex px-2.5 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100"
+            ><span className="sm:hidden">AI</span><span className="hidden sm:inline">AI design</span></button>
             {errorCount > 0 ? (
               <span className="inline-flex items-center gap-1.5 text-xs bg-red-50 text-red-700 border border-red-100 px-2.5 py-1 rounded-full font-medium tabular-nums">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
