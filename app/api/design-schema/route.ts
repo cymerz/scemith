@@ -77,7 +77,8 @@ export async function POST(request: Request) {
       content = payload?.choices?.[0]?.message?.content;
     }
     if (typeof content !== "string" || !content.trim()) throw new Error("The model returned no schema.");
-    const generated: unknown = JSON.parse(content);
+    const jsonContent = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    const generated: unknown = JSON.parse(jsonContent);
     if (!generated || typeof generated !== "object" || !Array.isArray((generated as { tables?: unknown }).tables)) {
       throw new Error("The model response did not contain a tables array.");
     }

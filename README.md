@@ -31,6 +31,16 @@
 - **peminjaman** (2NF violation): composite PK `(id_anggota, id_buku)` with partial dependencies
 - **mahasiswa** (3NF violation): transitive dependency via `kode_prodi → nama_prodi`
 
+### 6. Import and Export
+- Import and export schemas as JSON
+- Imported schema files are checked before replacing the current design
+
+### 7. AI Schema Design
+- Turn a natural-language system description into a suggested relational schema
+- Review tables, columns, keys, relationships, and dependencies before applying
+- Uses an OpenAI-compatible chat completions endpoint configured on the server
+- The model's result is a suggestion and should be reviewed before use
+
 ## Getting Started
 
 ```bash
@@ -40,14 +50,19 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## Tech Stack
+### AI configuration
 
-| Layer | Tech |
-|---|---|
-| Framework | Next.js 16 (App Router) |
-| Language | TypeScript 5 |
-| Styling | Tailwind CSS 4 |
-| Schema logic | Pure functions in `lib/` — no external dependencies |
+Copy `.env.example` to `.env.local` and set the credentials and model for your OpenAI-compatible provider:
+
+```env
+OPENAI_BASE_URL=https://api.example.com/v1
+OPENAI_API_KEY=your-api-key
+OPENAI_MODEL=your-model-name
+```
+
+The app sends AI requests from the server, so the API key is not exposed to the browser. The provider must support the OpenAI Chat Completions API, JSON object responses, and may return either standard JSON or server-sent events (SSE). Restart the dev server after changing environment variables.
+
+
 
 ## Project Structure
 
@@ -70,13 +85,3 @@ lib/
   examples.ts           # Built-in example schemas
 ```
 
-## Design
-
-- **Viewport-locked**: `h-dvh / overflow-hidden` — panels scroll internally, the page itself never scrolls
-- **Responsive**: 3-column layout on desktop (md+), bottom-tab navigation on mobile
-- **Color palette**: Indigo + white with amber accent, WCAG AA contrast
-- **Hydration-safe**: no `Date`, `Math.random`, or random IDs during render; IDs generated only inside event handlers
-
-## License
-
-MIT

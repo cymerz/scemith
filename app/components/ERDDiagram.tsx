@@ -438,7 +438,7 @@ export default function ERDDiagram({ schema, onPositionChange, fitKey }: Props) 
   // Wheel: Ctrl → zoom toward cursor, plain → vertical pan
   // -----------------------------------------------------------------------
   const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
+    (e: WheelEvent) => {
       e.preventDefault();
       if (e.ctrlKey || e.metaKey) {
         userInteracted.current = true;
@@ -466,6 +466,14 @@ export default function ERDDiagram({ schema, onPositionChange, fitKey }: Props) 
     },
     []
   );
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onWheel = (event: WheelEvent) => handleWheel(event);
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => container.removeEventListener("wheel", onWheel);
+  }, [handleWheel]);
 
   // -----------------------------------------------------------------------
   // +/- zoom buttons (zoom around canvas center)
@@ -512,7 +520,6 @@ export default function ERDDiagram({ schema, onPositionChange, fitKey }: Props) 
       ref={containerRef}
       className="relative w-full h-full overflow-hidden bg-[#f8fafc] select-none"
       onMouseDown={handleBgMouseDown}
-      onWheel={handleWheel}
       style={{ cursor: panDrag.current ? "grabbing" : "default" }}
     >
       {/*
@@ -643,153 +650,69 @@ export default function ERDDiagram({ schema, onPositionChange, fitKey }: Props) 
                 onMouseEnter={() => setHoveredTableId(table.id)}
                 onMouseLeave={() => setHoveredTableId(null)}
               >
-                {/* Card body */}
+                <defs>
+                  <clipPath id={`table-clip-${table.id}`}>
+                    <rect width={TW} height={h} rx="8" />
+                  </clipPath>
+                </defs>
+                <g clipPath={`url(#table-clip-${table.id})`}>
+                  <rect width={TW} height={h} fill="white" />
+                  <rect width={TW} height={HDR_H} fill={isHovered ? "#4338ca" : "#4f46e5"} />
+                  <text
+                    x={TW / 2}
+                    y={HDR_H / 2 + 5}
+                    textAnchor="middle"
+                    fontSize="12"
+                    fontWeight="600"
+                    fontFamily="ui-sans-serif, system-ui, sans-serif"
+                    fill="white"
+                    style={{ userSelect: "none" }}
+                  >
+                    {table.name || "(unnamed)"}
+                  </text>
+                  {table.columns.map((col, idx) => {
+                    const cy = HDR_H + idx * ROW_H;
+                    const isPK = col.primaryKey;
+                    const isFK = !!col.foreignKey;
+                    return (
+                      <g key={col.id}>
+                        <rect x={0} y={cy} width={TW} height={ROW_H} fill={idx % 2 === 0 ? "#f8fafc" : "white"} />
+                        {isPK && (
+                          <g>
+                            <rect x={6} y={cy + 4} width={18} height={13} rx="3" fill="#fef3c7" />
+                            <text x={15} y={cy + 14} textAnchor="middle" fontSize="8" fontWeight="700" fontFamily="ui-sans-serif, system-ui, sans-serif" fill="#b45309" style={{ userSelect: "none" }}>PK</text>
+                          </g>
+                        )}
+                        {isFK && !isPK && (
+                          <g>
+                            <rect x={6} y={cy + 4} width={16} height={13} rx="3" fill="#e0e7ff" />
+                            <text x={14} y={cy + 14} textAnchor="middle" fontSize="8" fontWeight="700" fontFamily="ui-sans-serif, system-ui, sans-serif" fill="#4338ca" style={{ userSelect: "none" }}>FK</text>
+                          </g>
+                        )}
+                        <text x={isPK || isFK ? 28 : 10} y={cy + ROW_H / 2 + 4} fontSize="11" fontFamily="ui-sans-serif, system-ui, sans-serif" fill={isPK ? "#1e1b4b" : "#374151"} fontWeight={isPK ? "600" : "400"} style={{ userSelect: "none" }}>
+                          {col.name || "(col)"}
+                        </text>
+                        <text x={TW - 6} y={cy + ROW_H / 2 + 4} textAnchor="end" fontSize="9" fontFamily="ui-monospace, monospace" fill="#9ca3af" style={{ userSelect: "none" }}>
+                          {col.type}{col.length ? `(${col.length})` : ""}
+                        </text>
+                      </g>
+                    );
+                  })}
+                  {table.columns.length === 0 && (
+                    <text x={TW / 2} y={HDR_H + 14} textAnchor="middle" fontSize="11" fontFamily="ui-sans-serif, system-ui, sans-serif" fill="#cbd5e1" style={{ userSelect: "none" }}>
+                      no columns
+                    </text>
+                  )}
+                </g>
                 <rect
                   width={TW}
                   height={h}
                   rx="8"
-                  fill="white"
+                  fill="none"
                   stroke={borderColor}
                   strokeWidth={isHovered ? 2 : 1}
+                  pointerEvents="none"
                 />
-
-                {/* Header bar */}
-                <rect
-                  width={TW}
-                  height={HDR_H}
-                  rx="8"
-                  fill={isHovered ? "#4338ca" : "#4f46e5"}
-                />
-                {/* Square off the bottom corners of the header */}
-                <rect
-                  y={HDR_H - 8}
-                  width={TW}
-                  height={8}
-                  fill={isHovered ? "#4338ca" : "#4f46e5"}
-                />
-
-                <text
-                  x={TW / 2}
-                  y={HDR_H / 2 + 5}
-                  textAnchor="middle"
-                  fontSize="12"
-                  fontWeight="600"
-                  fontFamily="ui-sans-serif, system-ui, sans-serif"
-                  fill="white"
-                  style={{ userSelect: "none" }}
-                >
-                  {table.name || "(unnamed)"}
-                </text>
-
-                {/* Column rows */}
-                {table.columns.map((col, idx) => {
-                  const cy = HDR_H + idx * ROW_H;
-                  const isPK = col.primaryKey;
-                  const isFK = !!col.foreignKey;
-
-                  return (
-                    <g key={col.id}>
-                      <rect
-                        x={0}
-                        y={cy}
-                        width={TW}
-                        height={ROW_H}
-                        fill={idx % 2 === 0 ? "#f8fafc" : "white"}
-                      />
-
-                      {/* PK pill */}
-                      {isPK && (
-                        <g>
-                          <rect
-                            x={6}
-                            y={cy + 4}
-                            width={18}
-                            height={13}
-                            rx="3"
-                            fill="#fef3c7"
-                          />
-                          <text
-                            x={15}
-                            y={cy + 14}
-                            textAnchor="middle"
-                            fontSize="8"
-                            fontWeight="700"
-                            fontFamily="ui-sans-serif, system-ui, sans-serif"
-                            fill="#b45309"
-                            style={{ userSelect: "none" }}
-                          >
-                            PK
-                          </text>
-                        </g>
-                      )}
-
-                      {/* FK pill */}
-                      {isFK && !isPK && (
-                        <g>
-                          <rect
-                            x={6}
-                            y={cy + 4}
-                            width={16}
-                            height={13}
-                            rx="3"
-                            fill="#e0e7ff"
-                          />
-                          <text
-                            x={14}
-                            y={cy + 14}
-                            textAnchor="middle"
-                            fontSize="8"
-                            fontWeight="700"
-                            fontFamily="ui-sans-serif, system-ui, sans-serif"
-                            fill="#4338ca"
-                            style={{ userSelect: "none" }}
-                          >
-                            FK
-                          </text>
-                        </g>
-                      )}
-
-                      <text
-                        x={isPK || isFK ? 28 : 10}
-                        y={cy + ROW_H / 2 + 4}
-                        fontSize="11"
-                        fontFamily="ui-sans-serif, system-ui, sans-serif"
-                        fill={isPK ? "#1e1b4b" : "#374151"}
-                        fontWeight={isPK ? "600" : "400"}
-                        style={{ userSelect: "none" }}
-                      >
-                        {col.name || "(col)"}
-                      </text>
-
-                      <text
-                        x={TW - 6}
-                        y={cy + ROW_H / 2 + 4}
-                        textAnchor="end"
-                        fontSize="9"
-                        fontFamily="ui-monospace, monospace"
-                        fill="#9ca3af"
-                        style={{ userSelect: "none" }}
-                      >
-                        {col.type}
-                        {col.length ? `(${col.length})` : ""}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {table.columns.length === 0 && (
-                  <text
-                    x={TW / 2}
-                    y={HDR_H + 14}
-                    textAnchor="middle"
-                    fontSize="11"
-                    fontFamily="ui-sans-serif, system-ui, sans-serif"
-                    fill="#cbd5e1"
-                    style={{ userSelect: "none" }}
-                  >
-                    no columns
-                  </text>
-                )}
               </g>
             );
           })}
