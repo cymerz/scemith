@@ -112,36 +112,35 @@ export function analyzeTable(table: Table): NormalizationResult {
   }
 
   const declaredFds = table.dependencies;
-
-  // For analysis purposes, augment declared FDs with the implied PK -> all other cols FD
-  // but only if there is a declared PK and it actually determines everything
-  const candidateKeys: string[][] =
-    declaredFds.length > 0
-      ? findCandidateKeys(colNames, declaredFds)
-      : pkCols.length > 0
-      ? [pkCols]
-      : [];
+  const keyDeterminants = [
+    ...(pkCols.length > 0 ? [pkCols] : []),
+    ...table.columns.filter((column) => column.unique && column.name).map((column) => [column.name]),
+  ];
+  const impliedFds: FunctionalDependency[] = keyDeterminants.map((determinant, index) => ({
+    id: `implied-key-${index}`,
+    determinant,
+    dependent: colNames.filter((name) => !determinant.includes(name)),
+    raw: `${determinant.join(", ")} -> ${colNames.filter((name) => !determinant.includes(name)).join(", ")}`,
+  }));
+  const analysisFds = [...declaredFds, ...impliedFds];
+  const candidateKeys = findCandidateKeys(colNames, analysisFds);
 
   const violations: NormalizationViolation[] = [];
 
   for (const fd of declaredFds) {
-    // Only analyse if all attrs are known columns
     const allKnown = [...fd.determinant, ...fd.dependent].every((a) => colNames.includes(a));
     if (!allKnown) continue;
 
-    // Skip trivial FDs (subset dependency)
     if (isSubset(fd.dependent, fd.determinant)) continue;
 
-    const detClosure = closure(fd.determinant, declaredFds);
+    const detClosure = closure(fd.determinant, analysisFds);
     const detIsSuperkey = [...new Set(colNames)].every((a) => detClosure.has(a));
 
     if (!detIsSuperkey) {
-      // Check 2NF: partial dependency — determinant is a proper subset of a composite candidate key
       const isPartialDep = candidateKeys.some(
         (k) => k.length > 1 && isSubset(fd.determinant, k) && !setsEqual(fd.determinant, k)
       );
       const nonPrimeDeps = fd.dependent.filter((d) => !isPrime(d, candidateKeys));
-
       if (isPartialDep && nonPrimeDeps.length > 0) {
         violations.push({
           tableId: table.id,
@@ -153,7 +152,6 @@ export function analyzeTable(table: Table): NormalizationResult {
         continue;
       }
 
-      // Check 3NF: transitive dependency — non-prime determinant → non-prime dependent
       const nonPrimeDetAttrs = fd.determinant.filter((d) => !isPrime(d, candidateKeys));
       const isTransitiveDep = nonPrimeDetAttrs.length > 0 && nonPrimeDeps.length > 0;
       if (isTransitiveDep) {
@@ -167,7 +165,6 @@ export function analyzeTable(table: Table): NormalizationResult {
         continue;
       }
 
-      // BCNF: determinant is not a superkey
       violations.push({
         tableId: table.id,
         tableName: table.name,
@@ -178,7 +175,6 @@ export function analyzeTable(table: Table): NormalizationResult {
     }
   }
 
-  // Determine highest achieved normal form
   let normalForm: NormalForm = "BCNF";
   if (violations.some((v) => v.violates === "2NF")) {
     normalForm = "1NF";
@@ -199,7 +195,6 @@ export function analyzeTable(table: Table): NormalizationResult {
 
 // ---------------------------------------------------------------------------
 // Name derivation
-// ---------------------------------------------------------------------------
 
 /**
  * Derive a clean table name from a determinant column list.
@@ -246,17 +241,12 @@ export function planDecomposition(
 ): DecomposedTablePlan[] {
   const allColNames = table.columns.map((c) => c.name).filter(Boolean);
 
-  // Group violations by determinant key
   const groups = new Map<string, { det: string[]; deps: string[]; fd: FunctionalDependency }>();
-  for (const v of violations) {
-    const key = v.fd.determinant.slice().sort().join(",");
-    if (!groups.has(key)) {
-      groups.set(key, { det: v.fd.determinant, deps: [], fd: v.fd });
-    }
-    for (const d of v.fd.dependent) {
-      if (!groups.get(key)!.deps.includes(d)) {
-        groups.get(key)!.deps.push(d);
-      }
+  for (const violation of violations) {
+    const key = violation.fd.determinant.slice().sort().join(",");
+    if (!groups.has(key)) groups.set(key, { det: violation.fd.determinant, deps: [], fd: violation.fd });
+    for (const dependent of violation.fd.dependent) {
+      if (!groups.get(key)!.deps.includes(dependent)) groups.get(key)!.deps.push(dependent);
     }
   }
 
@@ -267,27 +257,18 @@ export function planDecomposition(
   for (const { det, deps, fd } of groups.values()) {
     const name = deriveName(det, usedNames);
     usedNames.add(name);
-    const cols = [...det, ...deps];
-    plans.push({
-      suggestedName: name,
-      primaryKey: det,
-      columns: cols,
-      sourceFd: fd,
-      isRemainder: false,
-    });
-    for (const d of deps) removedCols.add(d);
+    plans.push({ suggestedName: name, primaryKey: det, columns: [...det, ...deps], sourceFd: fd, isRemainder: false });
+    for (const dependent of deps) removedCols.add(dependent);
   }
 
-  // Remainder — keeps original name and original composite PK columns
-  const remainCols = allColNames.filter((c) => !removedCols.has(c));
+  const remainCols = allColNames.filter((column) => !removedCols.has(column));
   plans.push({
     suggestedName: table.name,
-    primaryKey: table.columns.filter((c) => c.primaryKey).map((c) => c.name).filter((n) => remainCols.includes(n)),
+    primaryKey: table.columns.filter((column) => column.primaryKey).map((column) => column.name).filter((name) => remainCols.includes(name)),
     columns: remainCols,
     sourceFd: null,
     isRemainder: true,
   });
-
   return plans;
 }
 
@@ -315,84 +296,53 @@ export interface AppliedDecompositionTable {
 export function applyDecomposition(
   table: Table,
   plans: DecomposedTablePlan[],
-  finalNames: string[] // user-confirmed names, one per plan in order
+  finalNames: string[]
 ): AppliedDecompositionTable[] {
-  const colMap = new Map(table.columns.map((c) => [c.name, c]));
-
-  // Pre-generate stable IDs for all tables so FK references can point to them
+  const colMap = new Map(table.columns.map((column) => [column.name, column]));
   const planIds = plans.map(() => newId("tbl"));
-
   const result: AppliedDecompositionTable[] = [];
 
   for (let i = 0; i < plans.length; i++) {
     const plan = plans[i];
     const tableId = planIds[i];
     const tableName = finalNames[i];
+    const columns: Column[] = plan.columns.filter((name) => colMap.has(name)).map((name) => {
+      const original = colMap.get(name)!;
+      const isPK = plan.primaryKey.includes(name);
+      return {
+        ...original,
+        id: newId("col"),
+        primaryKey: isPK,
+        notNull: isPK ? true : original.notNull,
+        foreignKey: undefined,
+      };
+    });
 
-    // Build columns
-    const columns: Column[] = plan.columns
-      .filter((name) => colMap.has(name))
-      .map((name) => {
-        const orig = colMap.get(name)!;
-        const isPK = plan.primaryKey.includes(name);
-        const col: Column = {
-          ...orig,
-          id: newId("col"),
-          primaryKey: isPK,
-          // notNull: keep original, PKs are always notNull anyway
-          notNull: isPK ? true : orig.notNull,
-          // Clear FK from original — will add new FK to non-remainder tables for determinant cols
-          foreignKey: undefined,
-        };
-        return col;
-      });
-
-    // For the remainder table: add FK from each determinant column to its new table
     if (plan.isRemainder) {
       for (let j = 0; j < plans.length; j++) {
         if (plans[j].isRemainder) continue;
-        const depPlan = plans[j];
-        const depTableId = planIds[j];
-        // For each determinant col of this split that exists in the remainder
-        for (const detCol of depPlan.primaryKey) {
-          const colIdx = columns.findIndex((c) => c.name === detCol);
-          if (colIdx !== -1) {
-            columns[colIdx] = {
-              ...columns[colIdx],
-              foreignKey: { tableId: depTableId, columnName: detCol },
-            };
+        for (const determinantColumn of plans[j].primaryKey) {
+          const columnIndex = columns.findIndex((column) => column.name === determinantColumn);
+          if (columnIndex !== -1) {
+            columns[columnIndex] = { ...columns[columnIndex], foreignKey: { tableId: planIds[j], columnName: determinantColumn } };
           }
         }
       }
     }
 
-    // Filter FDs to only those whose all attributes are in this table
-    const tableColSet = new Set(plan.columns);
-    const filteredFds: FunctionalDependency[] = table.dependencies
-      .filter((fd) =>
-        fd.determinant.every((a) => tableColSet.has(a)) &&
-        fd.dependent.every((a) => tableColSet.has(a))
-      )
+    const tableColumns = new Set(plan.columns);
+    const dependencies = table.dependencies
+      .filter((fd) => fd.determinant.every((attribute) => tableColumns.has(attribute)) && fd.dependent.every((attribute) => tableColumns.has(attribute)))
       .map((fd) => ({ ...fd, id: newId("fd") }));
-
-    // Position: non-remainder tables are fanned out above; remainder keeps original position
-    const nonRemainderCount = plans.filter((p) => !p.isRemainder).length;
-    const nonRemainderIdx = plans.slice(0, i).filter((p) => !p.isRemainder).length;
-    const pos = plan.isRemainder
+    const nonRemainderCount = plans.filter((item) => !item.isRemainder).length;
+    const nonRemainderIndex = plans.slice(0, i).filter((item) => !item.isRemainder).length;
+    const position = plan.isRemainder
       ? { x: table.position.x, y: table.position.y + 220 }
-      : {
-          x: table.position.x + nonRemainderIdx * 240 - ((nonRemainderCount - 1) * 240) / 2,
-          y: table.position.y,
-        };
+      : { x: table.position.x + nonRemainderIndex * 240 - ((nonRemainderCount - 1) * 240) / 2, y: table.position.y };
 
-    result.push({
-      id: tableId,
-      name: tableName,
-      columns,
-      dependencies: filteredFds,
-      position: pos,
-    });
+    result.push({ id: tableId, name: tableName, columns, dependencies, position });
   }
 
   return result;
 }
+
