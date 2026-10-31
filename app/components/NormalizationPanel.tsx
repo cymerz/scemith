@@ -98,7 +98,7 @@ export default function NormalizationPanel({ schema, onChange, onUndo }: Props) 
         />
       )}
 
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full min-h-0 overflow-y-auto overscroll-contain">
         {/* Panel header */}
         <div className="flex-none px-4 py-3 border-b border-slate-200 bg-white">
           <div className="flex items-center justify-between mb-2">
@@ -140,7 +140,7 @@ export default function NormalizationPanel({ schema, onChange, onUndo }: Props) 
         </div>
 
         {/* Cards */}
-        <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3">
+        <div className="shrink-0 px-3 py-3 flex flex-col gap-3">
           {results.length === 0 && (
             <div className="flex flex-col items-center justify-center h-48 text-slate-400">
               <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-10 h-10 mb-3 text-slate-300">

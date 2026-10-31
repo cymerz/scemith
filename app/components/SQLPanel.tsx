@@ -38,11 +38,10 @@ export default function SQLPanel({ schema }: Props) {
   return (
     <div className="flex flex-col h-full">
       {/* Panel header */}
-      <div className="flex-none flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
+      <div className="flex-none flex flex-col gap-2.5 px-3 py-3 border-b border-slate-200 bg-white">
         <h2 className="text-sm font-semibold text-slate-700">SQL generator</h2>
-        <div className="flex items-center gap-2">
-          {/* Dialect toggle */}
-          <div className="flex rounded-md overflow-hidden border border-slate-200 text-xs">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <div className="flex flex-none rounded-md overflow-hidden border border-slate-200 text-xs">
             {(["mysql", "postgresql"] as Dialect[]).map((d) => (
               <button
                 key={d}

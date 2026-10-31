@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import type { Schema } from "@/lib/types";
 import { validateSchema } from "@/lib/schema";
 import { getExamples } from "@/lib/examples";
 import SchemaEditor from "@/app/components/SchemaEditor";
-import ERDDiagram from "@/app/components/ERDDiagram";
+import ERDDiagram, { autoLayout } from "@/app/components/ERDDiagram";
 import NormalizationPanel from "@/app/components/NormalizationPanel";
 import SQLPanel from "@/app/components/SQLPanel";
 import ExampleModal from "@/app/components/ExampleModal";
@@ -53,6 +53,14 @@ export default function Home() {
   const [rightTab, setRightTab] = useState<RightTab>("normalization");
   const [mobileTab, setMobileTab] = useState<MobileTab>("editor");
   const [showExampleModal, setShowExampleModal] = useState(false);
+  // Increment fitKey to tell ERDDiagram to auto-fit after load/decompose/undo
+  const fitKeyRef = useRef(0);
+  const [fitKey, setFitKey] = useState(0);
+
+  const bumpFit = useCallback(() => {
+    fitKeyRef.current += 1;
+    setFitKey(fitKeyRef.current);
+  }, []);
 
   const examples = getExamples();
   const errors = validateSchema(schema);
@@ -62,20 +70,29 @@ export default function Home() {
     setUndoSnapshot(null);
   }, []);
 
+  // Functional-update wrapper so SchemaEditor callbacks never close over stale schema
+  const handleSchemaChangeFn = useCallback((updater: (prev: Schema) => Schema) => {
+    setSchema(updater);
+    setUndoSnapshot(null);
+  }, []);
+
   const handleDecompositionChange = useCallback(
     (next: Schema) => {
       setUndoSnapshot(schema);
-      setSchema(next);
+      // Apply auto-layout so the decomposed tables are arranged cleanly
+      setSchema({ tables: autoLayout(next.tables) });
+      bumpFit();
     },
-    [schema]
+    [schema, bumpFit]
   );
 
   const handleUndo = useCallback(() => {
     if (undoSnapshot) {
       setSchema(undoSnapshot);
       setUndoSnapshot(null);
+      bumpFit();
     }
-  }, [undoSnapshot]);
+  }, [undoSnapshot, bumpFit]);
 
   const handlePositionChange = useCallback(
     (tableId: string, pos: { x: number; y: number }) => {
@@ -87,10 +104,12 @@ export default function Home() {
   );
 
   const handleLoadExample = useCallback((example: ReturnType<typeof getExamples>[number]) => {
-    setSchema(example.schema);
+    // Apply auto-layout so example tables are arranged in a tidy graph
+    setSchema({ tables: autoLayout(example.schema.tables) });
     setUndoSnapshot(null);
     setShowExampleModal(false);
-  }, []);
+    bumpFit();
+  }, [bumpFit]);
 
   const errorCount = errors.length;
   const relCount = schema.tables.reduce((n, t) => n + t.columns.filter((c) => !!c.foreignKey).length, 0);
@@ -112,56 +131,64 @@ export default function Home() {
         />
       )}
 
-      <div className="h-dvh overflow-hidden flex flex-col bg-white">
-        {/* Header */}
-        <header className="flex-none flex items-center justify-between px-4 h-11 bg-indigo-700 text-white z-10 shadow-md">
+      <div className="h-dvh overflow-hidden flex flex-col bg-[#f4f6fa] text-slate-900">
+        <header className="flex-none flex items-center justify-between px-5 h-14 bg-white border-b border-slate-200/80 z-10">
           <div className="flex items-center gap-3">
-            <span className="font-bold tracking-tight text-base">SchemaSmith</span>
-            <span className="hidden sm:flex items-center gap-2 text-xs text-indigo-300">
-              <span className="w-px h-4 bg-indigo-500" />
-              {schema.tables.length} table{schema.tables.length !== 1 ? "s" : ""}
-              {relCount > 0 && (
-                <><span className="text-indigo-500">·</span>
-                {relCount} relationship{relCount !== 1 ? "s" : ""}</>
-              )}
+            <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-200">
+              <svg viewBox="0 0 20 20" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.7">
+                <rect x="2.5" y="3" width="15" height="14" rx="2.5" />
+                <path d="M2.5 7.5h15M7.5 7.5V17" />
+              </svg>
+            </span>
+            <span className="font-semibold tracking-tight text-[15px]">SchemaSmith</span>
+            <span className="hidden sm:inline-block w-px h-5 bg-slate-200 mx-1" />
+            <span className="hidden sm:flex items-center gap-2 text-xs text-slate-500">
+              <span className="font-medium text-slate-700">{schema.tables.length} table{schema.tables.length !== 1 ? "s" : ""}</span>
+              {relCount > 0 && <><span className="text-slate-300">·</span>{relCount} relationship{relCount !== 1 ? "s" : ""}</>}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            {errorCount > 0 && (
-              <span className="text-[11px] bg-red-500 text-white px-2 py-0.5 rounded-full font-semibold tabular-nums">
-                {errorCount} error{errorCount !== 1 ? "s" : ""}
+            {errorCount > 0 ? (
+              <span className="inline-flex items-center gap-1.5 text-xs bg-red-50 text-red-700 border border-red-100 px-2.5 py-1 rounded-full font-medium tabular-nums">
+                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                {errorCount} issue{errorCount !== 1 ? "s" : ""}
               </span>
-            )}
+            ) : schema.tables.length > 0 ? (
+              <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Schema valid
+              </span>
+            ) : null}
           </div>
         </header>
 
-        {/* Desktop 3-column layout */}
-        <div className="hidden md:flex flex-1 min-h-0">
-          {/* Left: Schema Editor — min-w prevents collapse, max-w prevents hogging space */}
-          <aside className="w-[340px] min-w-[280px] max-w-[480px] flex-none border-r border-slate-200 overflow-hidden flex flex-col bg-white">
+        <div className="hidden md:flex flex-1 min-h-0 gap-3 p-3">
+          <aside className="w-[340px] min-w-[280px] max-w-[480px] flex-none border border-slate-200/80 rounded-xl flex flex-col bg-white overflow-x-hidden overflow-y-auto shadow-sm">
             <SchemaEditor
               schema={schema}
               onChange={handleSchemaChange}
+              onChangeFn={handleSchemaChangeFn}
               errors={errors}
               onLoadExample={() => setShowExampleModal(true)}
             />
           </aside>
 
           {/* Center: ERD */}
-          <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
-            <div className="flex-none flex items-center gap-2 px-3 h-9 bg-slate-50 border-b border-slate-200">
-              <span className="text-xs text-slate-500 font-medium">ERD diagram</span>
-              <span className="text-slate-300 text-xs">·</span>
-              <span className="text-xs text-slate-400">Drag tables · Ctrl+scroll to zoom · drag background to pan</span>
+          <main className="flex-1 min-w-0 overflow-hidden flex flex-col rounded-xl border border-slate-200/80 bg-white shadow-sm">
+            <div className="flex-none flex items-center justify-between gap-2 px-4 h-11 bg-white border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                <span className="text-xs text-slate-700 font-semibold">ER diagram</span>
+              </div>
+              <span className="hidden lg:inline text-[11px] text-slate-400">Drag to arrange <span className="mx-1 text-slate-300">·</span> Ctrl + scroll to zoom <span className="mx-1 text-slate-300">·</span> Drag canvas to pan</span>
             </div>
             <div className="flex-1 overflow-hidden">
-              <ERDDiagram schema={schema} onPositionChange={handlePositionChange} />
+              <ERDDiagram schema={schema} onPositionChange={handlePositionChange} fitKey={fitKey} />
             </div>
           </main>
 
           {/* Right: Tabs */}
-          <aside className="w-[320px] min-w-[260px] max-w-[420px] flex-none border-l border-slate-200 flex flex-col bg-white overflow-hidden">
-            <div className="flex-none flex border-b border-slate-200">
+          <aside className="w-[320px] min-w-[260px] max-w-[420px] flex-none border border-slate-200/80 rounded-xl flex flex-col bg-white overflow-hidden shadow-sm">
+            <div className="flex-none flex border-b border-slate-100 px-2 pt-2">
               {(["normalization", "sql"] as RightTab[]).map((tab) => (
                 <button
                   key={tab}
@@ -169,8 +196,8 @@ export default function Home() {
                   aria-label={tab === "normalization" ? "Normalization analysis" : "SQL generator"}
                   className={`flex-1 py-2 text-xs font-medium transition-colors capitalize focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-500 ${
                     rightTab === tab
-                      ? "border-b-2 border-indigo-600 text-indigo-700 bg-indigo-50"
-                      : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                      ? "border-b-2 border-indigo-600 text-indigo-700"
+                      : "border-b-2 border-transparent text-slate-500 hover:text-slate-700"
                   }`}
                 >
                   {tab === "normalization" ? "Normalization" : "SQL"}
@@ -192,21 +219,20 @@ export default function Home() {
         </div>
 
         {/* Mobile: single panel + bottom tabs */}
-        <div className="flex md:hidden flex-1 min-h-0 flex-col">
-          <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="flex md:hidden flex-1 min-h-0 flex-col bg-[#f4f6fa]">
+          <div className="flex-1 min-h-0 overflow-y-auto m-2 mb-0 rounded-xl border border-slate-200/80 bg-white shadow-sm">
             {mobileTab === "editor" && (
-              <div className="h-full overflow-y-auto">
-                <SchemaEditor
-                  schema={schema}
-                  onChange={handleSchemaChange}
-                  errors={errors}
-                  onLoadExample={() => setShowExampleModal(true)}
-                />
-              </div>
+              <SchemaEditor
+                schema={schema}
+                onChange={handleSchemaChange}
+                onChangeFn={handleSchemaChangeFn}
+                errors={errors}
+                onLoadExample={() => setShowExampleModal(true)}
+              />
             )}
             {mobileTab === "diagram" && (
               <div className="h-full overflow-hidden">
-                <ERDDiagram schema={schema} onPositionChange={handlePositionChange} />
+                <ERDDiagram schema={schema} onPositionChange={handlePositionChange} fitKey={fitKey} />
               </div>
             )}
             {mobileTab === "normalization" && (
