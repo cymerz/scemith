@@ -319,16 +319,8 @@ export function applyDecomposition(
 ): AppliedDecompositionTable[] {
   const colMap = new Map(table.columns.map((c) => [c.name, c]));
 
-  // Build id map: new table name -> new table id (so we can set FK refs)
+  // Pre-generate stable IDs for all tables so FK references can point to them
   const planIds = plans.map(() => newId("tbl"));
-  const nameToId = new Map<string, string>();
-  for (let i = 0; i < plans.length; i++) {
-    nameToId.set(finalNames[i], planIds[i]);
-  }
-
-  // Find the remainder plan and its id
-  const remainderIdx = plans.findIndex((p) => p.isRemainder);
-  const remainderId = planIds[remainderIdx];
 
   const result: AppliedDecompositionTable[] = [];
 

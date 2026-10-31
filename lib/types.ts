@@ -79,9 +79,3 @@ export interface NormalizationResult {
   violations: NormalizationViolation[];
 }
 
-export interface DecomposedTable {
-  name: string;
-  columns: string[];
-  primaryKey: string[];
-  note: string;
-}
