@@ -2,6 +2,14 @@
 
 import React, { useState } from "react";
 import type { Schema } from "@/lib/types";
+import { readableFailure } from "@/lib/ai-client";
+function isValidSchema(value: unknown): value is Schema {
+  return !!value && typeof value === "object" && "tables" in value && Array.isArray(value.tables) &&
+    value.tables.length > 0 && value.tables.every((table) =>
+      !!table && typeof table === "object" && typeof table.id === "string" && typeof table.name === "string" &&
+      Array.isArray(table.columns) && Array.isArray(table.dependencies)
+    );
+}
 
 interface Props {
   onApply: (schema: Schema) => void;
@@ -17,17 +25,25 @@ export default function AIDesignModal({ onApply, onClose }: Props) {
   const generate = async () => {
     setLoading(true);
     setError("");
+    setDraft(null);
     try {
       const response = await fetch("/api/design-schema", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ story }),
       });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error ?? "Could not generate a schema.");
-      setDraft(result.schema as Schema);
+      if (!response.ok) {
+        setError(await readableFailure(response));
+        return;
+      }
+      const result: unknown = await response.json();
+      if (!result || typeof result !== "object" || !("schema" in result) || !isValidSchema(result.schema)) {
+        setError("The AI service returned an invalid schema. Please try again.");
+        return;
+      }
+      setDraft(result.schema);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not generate a schema.");
+      setError(await readableFailure(cause));
     } finally {
       setLoading(false);
     }
