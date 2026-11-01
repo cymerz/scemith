@@ -281,13 +281,15 @@ export default function ERDDiagram({ schema, onPositionChange, fitKey }: Props) 
   // Tracks whether the user has manually interacted (zoom/pan) — suppresses auto-fit
   const userInteracted = useRef(false);
 
-  // Dragging
+  const pointerId = useRef<number | null>(null);
   const tableDrag = useRef<{
     tableId: string;
+    pointerId: number;
     startCX: number; startCY: number;
     origX: number; origY: number;
   } | null>(null);
   const panDrag = useRef<{
+    pointerId: number;
     startCX: number; startCY: number;
     origPan: { x: number; y: number };
   } | null>(null);
@@ -366,16 +368,16 @@ export default function ERDDiagram({ schema, onPositionChange, fitKey }: Props) 
     doFit(schema.tables, vpSize.w, vpSize.h);
   }, [schema.tables, vpSize, doFit]);
 
-  // -----------------------------------------------------------------------
-  // Mouse: table drag
-  // -----------------------------------------------------------------------
-  const handleTableMouseDown = useCallback(
-    (e: React.MouseEvent, tableId: string, table: Table) => {
+  const handleTablePointerDown = useCallback(
+    (e: React.PointerEvent, tableId: string, table: Table) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
+      pointerId.current = e.pointerId;
       userInteracted.current = true;
       tableDrag.current = {
         tableId,
+        pointerId: e.pointerId,
         startCX: e.clientX,
         startCY: e.clientY,
         origX: table.position.x,
@@ -385,36 +387,27 @@ export default function ERDDiagram({ schema, onPositionChange, fitKey }: Props) 
     []
   );
 
-  // -----------------------------------------------------------------------
-  // Mouse: background pan
-  // -----------------------------------------------------------------------
-  const handleBgMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.button !== 0) return;
-      userInteracted.current = true;
-      panDrag.current = {
-        startCX: e.clientX,
-        startCY: e.clientY,
-        origPan: { ...pan },
-      };
-    },
-    [pan]
-  );
+  const handleBgPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    pointerId.current = e.pointerId;
+    userInteracted.current = true;
+    panDrag.current = {
+      pointerId: e.pointerId,
+      startCX: e.clientX,
+      startCY: e.clientY,
+      origPan: { ...pan },
+    };
+  }, [pan]);
 
-  // -----------------------------------------------------------------------
-  // Global mouse move / up
-  // -----------------------------------------------------------------------
   useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (tableDrag.current) {
+    const onMove = (e: PointerEvent) => {
+      if (tableDrag.current?.pointerId === e.pointerId) {
         const { tableId, startCX, startCY, origX, origY } = tableDrag.current;
-        const dx = (e.clientX - startCX) / zoom;
-        const dy = (e.clientY - startCY) / zoom;
-        // No clamping — tables can go anywhere in world space
-        onPositionChange(tableId, { x: origX + dx, y: origY + dy });
-        return;
-      }
-      if (panDrag.current) {
+        onPositionChange(tableId, {
+          x: origX + (e.clientX - startCX) / zoom,
+          y: origY + (e.clientY - startCY) / zoom,
+        });
+      } else if (panDrag.current?.pointerId === e.pointerId) {
         const { startCX, startCY, origPan } = panDrag.current;
         setPan({
           x: origPan.x + e.clientX - startCX,
@@ -422,15 +415,19 @@ export default function ERDDiagram({ schema, onPositionChange, fitKey }: Props) 
         });
       }
     };
-    const onUp = () => {
+    const onUp = (e: PointerEvent) => {
+      if (pointerId.current !== e.pointerId) return;
+      pointerId.current = null;
       tableDrag.current = null;
       panDrag.current = null;
     };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
     };
   }, [zoom, onPositionChange]);
 
@@ -518,8 +515,8 @@ export default function ERDDiagram({ schema, onPositionChange, fitKey }: Props) 
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full overflow-hidden bg-[#f8fafc] select-none"
-      onMouseDown={handleBgMouseDown}
+      className="relative h-full w-full overflow-hidden bg-[#f8fafc] select-none touch-none"
+      onPointerDown={handleBgPointerDown}
       style={{ cursor: panDrag.current ? "grabbing" : "default" }}
     >
       {/*
@@ -646,7 +643,7 @@ export default function ERDDiagram({ schema, onPositionChange, fitKey }: Props) 
                 key={table.id}
                 transform={`translate(${table.position.x}, ${table.position.y})`}
                 style={{ cursor: "grab", filter }}
-                onMouseDown={(e) => handleTableMouseDown(e, table.id, table)}
+                onPointerDown={(e) => handleTablePointerDown(e, table.id, table)}
                 onMouseEnter={() => setHoveredTableId(table.id)}
                 onMouseLeave={() => setHoveredTableId(null)}
               >

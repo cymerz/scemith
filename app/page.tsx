@@ -194,8 +194,8 @@ export default function Home() {
       )}
 
       <div className="h-dvh overflow-hidden flex flex-col bg-[#f4f6fa] text-slate-900">
-        <header className="flex-none flex items-center justify-between px-5 h-14 bg-white border-b border-slate-200/80 z-10">
-          <div className="flex items-center gap-3">
+        <header className="relative z-10 flex h-14 flex-none flex-nowrap items-center justify-between gap-2 border-b border-slate-200/80 bg-white px-2 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-200">
               <svg viewBox="0 0 20 20" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.7">
                 <rect x="2.5" y="3" width="15" height="14" rx="2.5" />
@@ -209,7 +209,7 @@ export default function Home() {
               {relCount > 0 && <><span className="text-slate-300">·</span>{relCount} relationship{relCount !== 1 ? "s" : ""}</>}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-none items-center justify-end gap-1 sm:gap-2">
             <input
               ref={importInputRef}
               type="file"
@@ -220,25 +220,37 @@ export default function Home() {
             />
             <button
               onClick={() => importInputRef.current?.click()}
-              className="px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50"
-            >Import</button>
+              aria-label="Import schema"
+              title="Import schema"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 sm:h-auto sm:w-auto sm:px-2.5 sm:py-1.5 sm:text-xs sm:font-medium"
+            >
+              <svg viewBox="0 0 16 16" className="h-4 w-4 sm:hidden" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 10V2m0 0L5 5m3-3l3 3M3 9v4h10V9" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              <span className="hidden sm:inline">Import</span>
+            </button>
             <button
               onClick={handleExport}
               disabled={schema.tables.length === 0}
-              className="px-2.5 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
-            >Export</button>
+              aria-label="Export schema"
+              title="Export schema"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40 sm:h-auto sm:w-auto sm:px-2.5 sm:py-1.5 sm:text-xs sm:font-medium"
+            >
+              <svg viewBox="0 0 16 16" className="h-4 w-4 sm:hidden" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 2v8m0 0l3-3m-3 3L5 7M3 10v3h10v-3" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              <span className="hidden sm:inline">Export</span>
+            </button>
             <button
               onClick={() => setShowAIDesignModal(true)}
-              className="inline-flex px-2.5 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100"
+              aria-label="Design schema with AI"
+              className="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border border-indigo-100 bg-indigo-50 px-2 text-xs font-medium text-indigo-700 hover:bg-indigo-100 sm:h-auto sm:px-2.5 sm:py-1.5 sm:text-xs"
             ><span className="sm:hidden">AI</span><span className="hidden sm:inline">AI design</span></button>
             {errorCount > 0 ? (
-              <span className="inline-flex items-center gap-1.5 text-xs bg-red-50 text-red-700 border border-red-100 px-2.5 py-1 rounded-full font-medium tabular-nums">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                {errorCount} issue{errorCount !== 1 ? "s" : ""}
+              <span title={`${errorCount} schema issue${errorCount !== 1 ? "s" : ""}`} className="inline-flex h-8 w-8 items-center justify-center gap-1 rounded-full border border-red-100 bg-red-50 text-xs font-semibold tabular-nums text-red-700 sm:h-auto sm:w-auto sm:px-2.5 sm:py-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                <span className="hidden sm:inline">{errorCount} issue{errorCount !== 1 ? "s" : ""}</span>
               </span>
             ) : schema.tables.length > 0 ? (
-              <span className="inline-flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-full font-medium">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />Schema valid
+              <span title="Schema valid" className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-emerald-100 bg-emerald-50 sm:h-auto sm:w-auto sm:gap-1.5 sm:px-2.5 sm:py-1">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="hidden text-xs font-medium text-emerald-700 sm:inline">Schema valid</span>
               </span>
             ) : null}
           </div>
