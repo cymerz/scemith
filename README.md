@@ -1,6 +1,6 @@
 # SchemaSmith
 
-**SchemaSmith** is a web application for designing relational database schemas — built for computer science students and junior developers.
+**SchemaSmith** is a web application for designing relational database schemas — built for computer science students and junior developers. Live demo at [scemtih](https://scemith.vercel.app/)
 
 ## Features
 
